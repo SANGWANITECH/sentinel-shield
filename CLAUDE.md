@@ -56,9 +56,9 @@ docs/           report, diagrams, presentation notes
 ```
 
 ## Database (db/schema.sql)
-Tables: `district_boundary`, `study_area`, `rivers`, `roads`, `villages` (name, population),
+Tables: `district_boundary`, `study_area`, `rivers`, `roads`, `villages` (name, population, footprint),
 `buildings`, `power_lines`, `flood_extent` (level_m unique), `candidate_lz` (code, area_m2,
-mean_slope, landcover), `staging_base`. Every geometry column is SRID 32736 with a GIST index.
+mean_slope, landcover, score, pad), `staging_base`. Every geometry column is SRID 32736 with a GIST index.
 Raster tables `dem` (Copernicus GLO-30, 30 m) and `landcover` (ESA WorldCover 2021, 10 m) are
 created by `scripts/load_data.py` via raster2pgsql.
 Apply with: `psql -U postgres -d sentinel_shield -f db/schema.sql`
@@ -72,8 +72,22 @@ Apply with: `psql -U postgres -d sentinel_shield -f db/schema.sql`
   OSM via Overpass mirrors, with an OSM API bbox fallback. Rasters via windowed COG reads.
 - `scripts/load_data.py`: reproject to 32736, clip, estimate population (Voronoi x buildings), then
   TRUNCATE + reload in one transaction. Rasters are reprojected into data/processed and loaded with raster2pgsql.
-- Run with `.venv\Scripts\python.exe`. Network here is very slow (~30 KB/s AWS, ~2 KB/s OSM API),
-  and Overpass is often overloaded.
+- Run with `.venv\Scripts\python.exe`. Network here is slow AND intermittent, and Overpass is often overloaded.
+  Python's own TLS handshakes stall, so all HTTP goes through **curl** (with resume). pip index pages time out,
+  so install with `scripts/fetch_wheels.py` + `requirements.lock` (offline `pip install --no-index`).
+
+## State after the overnight run (session 3), all phases built (see PROGRESS.md)
+- OSM is thin here: 1 place node, 831 buildings, 9 unnamed river ways (treated as the Kasangadzi), 0 power lines.
+  Added Microsoft ML building footprints (+14,110). 49 settlements derived from building clusters
+  (`config.toml [settlements]`), each with a `footprint` polygon used for the flood test.
+- `scripts/process_terrain.py`: slope, reclass, suitability -> 40 LZs (`candidate_lz` + `pad` landing point + `score`);
+  HAND floods 0-6 m (`flood_extent`, level 0 = normal channel); hillshade -> `frontend/public/basemap/`; GPKG export.
+- `db/functions.sql`: `sentinel_scenario(level)` and `sentinel_base_layers()` (jsonb, EPSG:4326), plus the materialized
+  view `flood_extent_parts` (ST_Subdivide). 40-84 ms per level.
+- `backend/app/main.py` (FastAPI, port 8000) + 7 pytest tests. `frontend/` (React + Vite + Leaflet, port 5173 dev / 4173 preview).
+- `scripts/start.ps1 [-Preview] [-NoBrowser]` starts everything. `scripts/restore_db.ps1` restores `db/sentinel_shield.dump`.
+- Visual checks: headless Edge `--screenshot` with `--force-prefers-reduced-motion` and `?level=X` in the URL.
+- Only use the `sentinel_shield` database (another, unrelated database lives on this server).
 
 ## Working conventions
 - Team members must be able to explain every file in the presentation: when creating/changing

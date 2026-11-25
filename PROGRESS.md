@@ -1,6 +1,62 @@
 # PROGRESS
 
-<!-- MORNING SUMMARY goes here at the end of the overnight run -->
+## Morning summary (overnight run, 25 Nov 2026)
+
+**All six phases (A to F) are built, tested, committed and pushed.**
+
+### How to run the app
+```powershell
+cd C:\Users\pc.DESKTOP-5HLK5E7\Documents\sentinel-shield
+.\scripts\start.ps1 -Preview        # opens http://localhost:4173 (API on :8000)
+```
+Two PowerShell windows open (API and UI). Close them to stop. Then press **Simulate rising water**.
+Tip: `http://localhost:4173/?level=4` opens straight at 4 m.
+Tests: `cd backend; ..\.venv\Scripts\python.exe -m pytest -q` (7 pass).
+
+### What works
+- Full pipeline: download (clipped) -> load (EPSG:32736) -> terrain processing -> live SQL -> API -> UI.
+- 49 settlements (~65,700 people), 14,941 buildings, 40 landing zones, 13 flood levels (0 to 6 m, 1.4 to 6.8 km²).
+- Live query 40 to 84 ms per level (target < 200 ms). The KNN index is used (`Order By: pad <-> geom`).
+- At 6 m: 16,434 people exposed, 11 settlements stranded, 7 reachable by helicopter, 4 with no safe zone, 31 roads cut, 5 zones lost.
+- The UI matches the mockup brief: dark command centre, offline hillshade, animated counters, play/reset, rescue
+  list, layer toggles, criteria chips, scale bar, north arrow, water level readout. No console errors. Works offline.
+- Team docs in `docs/`, manual QGIS steps in `qgis/README.md`, GeoPackage for QGIS in `data/processed/`.
+
+### What does not work, or is weaker than hoped (please read)
+- **Village names:** OSM has almost no names here, so most settlements are "Settlement NN" (plus Mponela,
+  Mponela Rural, St. Chavara). If the team knows real village names, edit the `villages.name` column
+  (`UPDATE villages SET name='...' WHERE id=..`) and re-dump. The app shows names straight from the DB.
+- **Kasangadzi River is not named in OSM.** We assume the unnamed river crossing the M1 north of Mponela is it. Please confirm.
+- **No power lines in OSM** for this area, so that criterion is implemented but excludes nothing.
+- **Flood model is HAND (terrain-based), not hydraulic.** This is stated clearly in docs/METHODS.md and QA_PREP.md.
+- `restore_db.ps1` was not executed (see Phase F). The headless screenshots can't capture animations, so
+  please check the motion (flood fade, pulsing ring, counters) once in a real browser.
+- I couldn't turn the internet off to test offline mode. The bundle audit shows no runtime external requests.
+
+### Every decision I made (details in the phase log below)
+1. No scipy: nearest drainage via shapely STRtree (exact, same as distance_transform_edt indices). Saved 45 MB.
+2. No @vitejs/plugin-react (Babel): Vite's esbuild compiles JSX. Plain Leaflet instead of react-leaflet.
+3. pip replaced by `fetch_wheels.py` + `requirements.lock` (curl + resume, offline install), because pip and Python TLS kept timing out.
+4. All HTTP in download_data.py goes through curl with retries and resume.
+5. Bbox kept (Mponela and the river both inside). The unnamed OSM river is treated as the Kasangadzi.
+6. Settlements derived from building clusters (100 m link, >= 40 buildings, town split into 1 km sectors) -> 49.
+7. Microsoft building footprints added (2 x 30 MB tiles): the one exception to minimal downloads, needed for population.
+8. Village `footprint` polygon: stranded = flood touches the built-up area (a single point was too strict).
+9. Landing zones: suitable area tiled into 250 m squares, 50 x 50 m test = mitre-joined -25 m buffer,
+   score 0.6 flatness + 0.4 size, greedy selection with the largest spacing that yields 40 (1,200 m).
+10. Landing spot `pad` = pole of inaccessibility. KNN, distances, ETA and markers use it.
+11. Level 0.0 = normal river channel: keeps the 120 m clearance at the bottom of the slider. No stranding or road cuts at 0.
+12. Road cut = > 20 m flooded outside the normal channel (so bridges over the river don't count at every level).
+13. Safe LZ test uses the whole zone polygon with ST_DWithin 120 m (conservative, as specified).
+14. Materialized view `flood_extent_parts` (ST_Subdivide) for fast index lookups.
+15. Hillshade: DEM read at 3x (bilinear), 3x vertical exaggeration, dark tones, own Leaflet pane.
+16. `?level=` URL parameter. Counters respect "reduce motion". `start.ps1 -NoBrowser` switch.
+17. Committed `data/processed/sentinel_shield.gpkg` (5.6 MB) and `db/sentinel_shield.dump` (2.3 MB) so teammates and the demo laptop need no internet.
+
+### Suggested next steps for the team
+- Confirm the river and add real village names. Take QGIS screenshots for the slide (qgis/README.md).
+- Rehearse with docs/DEMO_SCRIPT.md. Each member reads docs/QA_PREP.md.
+- Optional: test `restore_db.ps1` on the demo laptop.
 
 ## Log
 
@@ -104,7 +160,7 @@ Decisions taken up front (to keep downloads small on a ~30 KB/s line):
   if any part of a zone is within 120 m, the whole zone is lost.
 - Level 0 = baseline: nobody is stranded and no road is cut. Road cuts ignore the span over the normal channel (bridges)
   and need > 20 m flooded outside it.
-- ETA = distance KIA -> landing spot / 180 km/h (KIA is about 30 km away, so ETAs are about 9 to 11 min).
+- ETA = distance KIA -> landing spot / 180 km/h (the zones are 25 to 34 km from KIA, so ETAs are 8.3 to 11.3 min).
 
 **Results per level** (stranded / reachable / no safe zone / roads cut / safe LZ):
 0.0: 0/0/0/0/37 · 0.5: 5/2/3/5/37 · 1.0: 7/4/3/8/37 · 2.0: 8/5/3/13/37 · 3.0: 8/4/4/15/36 · 4.0: 9/5/4/23/36 · 5.0: 10/6/4/26/36 · 6.0: 11/7/4/31/35
@@ -154,3 +210,17 @@ React 18 + Vite 6 + plain Leaflet 1.9. Fonts come from @fontsource (Barlow Conde
 - Counters skip the count-up animation when the OS asks for reduced motion (accessibility).
 - Checked: no console errors. Totals on screen match SQL (6 m: 16,434 people, 11 stranded, 7 reachable, 4 no LZ).
 - Production bundle: 309 KB JS (95 KB gzip). The only external URL actually requested is the optional OSM tile layer.
+
+### Phase F: demo-ready (DONE)
+- `scripts/start.ps1 [-Preview] [-NoBrowser]`: checks the venv, node_modules, .env and the PostgreSQL service, starts uvicorn,
+  waits for /api/health, starts Vite (dev, or build + preview) in its own window and opens the browser.
+  **Tested** with `-Preview -NoBrowser`: page, API proxy, scenario and hillshade all served, screenshot correct.
+  The test windows were closed afterwards.
+- **Offline check:** I did not turn the network off (that would be a system setting change). Instead I audited the
+  production bundle: no runtime requests except the optional OSM tile layer (off by default). Fonts, Leaflet CSS and the basemap are all local.
+- `db/sentinel_shield.dump` (2.3 MB, `pg_dump -Fc`) + `scripts/restore_db.ps1`: rebuild the database on another laptop
+  in seconds, no internet needed. The restore skips the EXTENSION entries (the script enables PostGIS itself).
+  **Not executed here**: testing it would need a second database or overwriting the live one, and the rules allow only sentinel_shield.
+  The dump's contents were checked with `pg_restore -l`.
+- docs: `DEMO_SCRIPT.md` (3 min), `SLIDE.md`, `QA_PREP.md` (25 Q&A), `METHODS.md`, `DATABASE.md`, `CODE_GUIDE.md`.
+- README rewritten (run instructions for 3 situations, architecture diagram, methods, data, assumptions).
