@@ -69,3 +69,26 @@ Decisions taken up front (to keep downloads small on a ~30 KB/s line):
 | osm_places / named_features / power_lines | < 1 KB each |
 | ms_buildings.geojson (clipped) | 4.8 MB |
 | _cache: Microsoft tiles + index | 30 + 31 + 7 MB |
+
+### Phase B: terrain processing (DONE)
+`scripts/process_terrain.py` (about 30 s run time).
+- **Slope** from the 30 m UTM DEM (numpy gradient). Flat (<= 7 degrees): 96% of the study area. The plateau is very flat.
+- **Reclassification:** open ground = WorldCover 30/40/60 makes up 83% of the area (mostly cropland).
+- **Suitability** = flat AND open AND >= 30 m from buildings AND >= 50 m from power lines (none present): 70% of cells.
+- **Candidate LZs:** the suitable area is one huge connected region, so it is **cut into 250 m tiles**. The 50 x 50 m
+  test is a negative 25 m buffer with mitre joins (exact for pixel-edged polygons). 1,162 tile pieces pass.
+  **Selection method:** score = 0.6 x flatness + 0.4 x size, then greedy picking by score with a minimum spacing
+  between landing spots (the largest of 1200/1000/800/600/400/250 m that still gives 40). Result: **40 zones at >= 1,200 m spacing**.
+  All cropland, slope 0.5 to 3.4 degrees, 2.3 to 6.25 ha, landing spot >= 90 m from the nearest building.
+  Village to nearest LZ: 682 m on average, 1,472 m at most.
+- **Landing spot (`pad`)** = pole of inaccessibility of the 25 m-eroded zone. Used for KNN, distances and markers.
+- **HAND flood model:** drainage = rasterised OSM river lines (616 cells). Nearest drainage cell via shapely STRtree
+  (no scipy). Flood = HAND <= level AND connected to the river (polygons touching river lines), then closed by 15 m and simplified by 5 m.
+  13 levels (0 to 6 m). Area grows steadily from **1.38 km² (0 m = normal channel) to 6.83 km² (6 m)**.
+  Documented as a simplified terrain model, not a hydraulic model, in docs/METHODS.md.
+- **Hillshade basemap:** DEM read at 3x (bilinear) and shaded from the NW, with 3x vertical exaggeration and dark tones,
+  saved as `frontend/public/basemap/hillshade.png` (1098x876) + `hillshade.json` bounds.
+- **GeoPackage** `data/processed/sentinel_shield.gpkg` (5.6 MB, committed) with every layer, including `candidate_lz_pads` and `village_voronoi`.
+- `qgis/README.md`: step-by-step manual QGIS reproduction (slope, reclass, buffers, raster calculator, polygonise, -25 m buffer, HAND).
+- Decision: **level 0.0 is stored** as the normal channel, so landing zones keep their 120 m clearance from the river at the
+  bottom of the slider. In the live query nobody is stranded and no road is "cut" at level 0.
