@@ -132,3 +132,25 @@ FastAPI + psycopg 3 with a small connection pool (`psycopg_pool`). Run it with
 - CORS for localhost:5173 (dev) and :4173 (preview). The Vite dev server also proxies /api, so the browser uses one origin.
 - **7 pytest tests pass** (`cd backend; ..\.venv\Scripts\python -m pytest -q`): health, meta, scenario shape and totals
   consistency, flood grows with level, WGS84 coordinates, 404 for unknown level, base layers.
+
+### Phase E: frontend (DONE)
+React 18 + Vite 6 + plain Leaflet 1.9. Fonts come from @fontsource (Barlow Condensed, IBM Plex Sans/Mono, latin subset), bundled for offline use.
+- Header: shield logo, title, subtitle, badges (district/river, SIMULATION, PostGIS live; the badge turns red if the API fails).
+- Map: offline hillshade basemap (OSM tiles optional, off by default, dark-filtered), rivers, roads (styled by class),
+  power lines, flood (translucent blue, fades between levels), villages (grey / amber stranded+reachable /
+  red with pulsing ring = no safe zone), LZ markers "H" (green; dashed grey when lost, with CSS transition),
+  dashed green rescue links, red flooded road segments + "ROAD CUT" labels for main roads (spaced >= 450 m apart),
+  metric scale bar, north arrow, water level readout (+ km² flooded), legend.
+- Side panel: 4 animated counters, slider 0 to 6 m, "Simulate rising water" (+0.5 m every 700 ms) / Pause, Reset,
+  rescue assignments sorted by population ("V26 Settlement 25 → LZ-29 · 0.7 km · ETA 10 min" or
+  "No safe zone in reach · send boat team"), layer toggles, criteria chips from /api/meta, PostGIS query time.
+- `?level=3.5` in the URL opens at that level (used for screenshots and handy in the demo).
+- Each slider change makes a live API call. AbortController cancels stale requests while the animation plays.
+
+**Bugs found with headless Edge screenshots, and fixed**
+1. The flood and rivers were hidden under the hillshade (Leaflet's imageOverlay sits in overlayPane z=400). The hillshade now has its own pane (z=150).
+2. The flood fade-in used requestAnimationFrame, which is paused in background tabs, so the flood could stay invisible. It now forces a style flush and removes the class directly.
+3. The rescue list collapsed to about 2 rows when the panel overflowed. Blocks no longer shrink, and the list is >= 260 px tall.
+- Counters skip the count-up animation when the OS asks for reduced motion (accessibility).
+- Checked: no console errors. Totals on screen match SQL (6 m: 16,434 people, 11 stranded, 7 reachable, 4 no LZ).
+- Production bundle: 309 KB JS (95 KB gzip). The only external URL actually requested is the optional OSM tile layer.
