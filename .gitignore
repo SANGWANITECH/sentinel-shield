@@ -1,0 +1,27 @@
+# Large / raw data
+data/raw/
+*.tif
+*.tiff
+*.aux.xml
+
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Node
+node_modules/
+dist/
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# QGIS temp files
+*.qgs~
+*.qgz~
