@@ -92,3 +92,31 @@ Decisions taken up front (to keep downloads small on a ~30 KB/s line):
 - `qgis/README.md`: step-by-step manual QGIS reproduction (slope, reclass, buffers, raster calculator, polygonise, -25 m buffer, HAND).
 - Decision: **level 0.0 is stored** as the normal channel, so landing zones keep their 120 m clearance from the river at the
   bottom of the slider. In the live query nobody is stranded and no road is "cut" at level 0.
+
+### Phase C: database logic (DONE)
+`db/functions.sql`: `sentinel_scenario(level, clearance=120, reach=1300, speed=180)` returns one jsonb document
+(flood, safe_lz, lost_lz, stranded with nearest LZ / distance / ETA, links, roads_cut, totals) in EPSG:4326.
+`sentinel_base_layers()` returns the static layers. Materialized view `flood_extent_parts` (ST_Subdivide, 255 vertices) is refreshed by process_terrain.py.
+
+**Decisions**
+- "Stranded" uses the village **footprint** (`ST_Intersects(footprint, flood)`). The nearest-LZ distance is measured from the village centre point.
+- Safe LZ = the zone polygon is NOT within 120 m of the flood (`ST_DWithin`, as specified). This is conservative:
+  if any part of a zone is within 120 m, the whole zone is lost.
+- Level 0 = baseline: nobody is stranded and no road is cut. Road cuts ignore the span over the normal channel (bridges)
+  and need > 20 m flooded outside it.
+- ETA = distance KIA -> landing spot / 180 km/h (KIA is about 30 km away, so ETAs are about 9 to 11 min).
+
+**Results per level** (stranded / reachable / no safe zone / roads cut / safe LZ):
+0.0: 0/0/0/0/37 · 0.5: 5/2/3/5/37 · 1.0: 7/4/3/8/37 · 2.0: 8/5/3/13/37 · 3.0: 8/4/4/15/36 · 4.0: 9/5/4/23/36 · 5.0: 10/6/4/26/36 · 6.0: 11/7/4/31/35
+
+**Benchmark** (`EXPLAIN ANALYZE SELECT sentinel_scenario(level)`, average of 3 runs, local PostgreSQL 17):
+| level | ms | level | ms | level | ms |
+|---|---|---|---|---|---|
+| 0.0 | 40 | 2.0 | 60 | 4.5 | 67 |
+| 0.5 | 54 | 2.5 | 60 | 5.0 | 70 |
+| 1.0 | 61 | 3.0 | 61 | 5.5 | 69 |
+| 1.5 | 59 | 3.5 | 63 | 6.0 | 84 |
+| | | 4.0 | 67 | | |
+**Every level is under 100 ms (target 200 ms).** The planner uses the KNN index directly:
+`Index Scan using candidate_lz_pad_gix ... Order By: (pad <-> v.geom)`, plus `flood_extent_parts_geom_gix` for the
+ST_DWithin anti-join. The nearest-LZ step for all 49 villages runs in **3 ms**. Most of the remaining time goes into building the GeoJSON.
