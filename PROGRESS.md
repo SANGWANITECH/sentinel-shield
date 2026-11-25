@@ -120,3 +120,15 @@ Decisions taken up front (to keep downloads small on a ~30 KB/s line):
 **Every level is under 100 ms (target 200 ms).** The planner uses the KNN index directly:
 `Index Scan using candidate_lz_pad_gix ... Order By: (pad <-> v.geom)`, plus `flood_extent_parts_geom_gix` for the
 ST_DWithin anti-join. The nearest-LZ step for all 49 villages runs in **3 ms**. Most of the remaining time goes into building the GeoJSON.
+
+### Phase D: backend (DONE)
+FastAPI + psycopg 3 with a small connection pool (`psycopg_pool`). Run it with
+`.venv\Scripts\python -m uvicorn app.main:app --app-dir backend --port 8000` (or scripts/start.ps1).
+- `GET /api/health`: PostGIS version and row counts (503 if the DB is down).
+- `GET /api/meta`: bbox, levels, staging base, assumptions and human-readable criteria chips (from config.toml).
+- `GET /api/scenario/{level}`: snaps to 0.5 m and returns 404 for unknown levels. Passes the PostGIS JSON straight through,
+  with an `X-Query-Ms` header (about 45 ms, 46 KB at 3.5 m).
+- `GET /api/base-layers`: district, study area, rivers, roads, power lines, villages, staging base, simplified (135 KB, cached).
+- CORS for localhost:5173 (dev) and :4173 (preview). The Vite dev server also proxies /api, so the browser uses one origin.
+- **7 pytest tests pass** (`cd backend; ..\.venv\Scripts\python -m pytest -q`): health, meta, scenario shape and totals
+  consistency, flood grows with level, WGS84 coordinates, 404 for unknown level, base layers.
