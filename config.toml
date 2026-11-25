@@ -1,0 +1,79 @@
+# Sentinel Shield — project settings and modelling assumptions.
+# Change values here instead of in the code. Scripts read this file via scripts/common.py.
+
+[study_area]
+name = "Kasangadzi River - Mponela"
+description = "10 x 8 km window centred on Mponela town, Dowa District (Jan 2024 flash floods)."
+# EPSG:4326 bounding box (degrees). Confirmed by the team in session 2.
+west  = 33.6909
+south = -13.5657
+east  = 33.7833
+north = -13.4937
+# Extra margin (metres) read around the rasters so slope/flood edges are not cut off.
+raster_margin_m = 500
+
+[district]
+country_iso = "MWI"
+adm_level = "ADM2"
+name = "Dowa"
+
+[rescue]
+staging_base_name = "Kamuzu International Airport (KIA), Lilongwe"
+staging_base_lat = -13.789
+staging_base_lon = 33.781
+helicopter_speed_kmh = 180      # ASSUMPTION: typical rescue-helicopter cruise speed
+max_lz_distance_m = 1300        # villages with no safe LZ within this distance are flagged
+min_lz_side_m = 50              # LZ must fit a 50 x 50 m square
+water_clearance_m = 120         # LZ must be at least this far from water
+
+[terrain]
+# Landing-zone suitability criteria (multi-criteria analysis, all must be true)
+max_slope_deg = 7                  # helicopter needs near-flat ground
+open_landcover = [30, 40, 60]      # WorldCover: 30 grassland, 40 cropland, 60 bare/sparse
+# excluded: 10 trees, 20 shrubland, 50 built-up, 80 water, 90 wetland (and 70, 95, 100)
+building_clearance_m = 30
+powerline_clearance_m = 50
+# Big open areas are cut into tiles so each landing zone is a compact site, not a whole plain.
+lz_tile_m = 250
+max_lz = 40
+# Greedy spacing (metres) tried in order; the largest spacing that still yields max_lz is used.
+lz_spacing_m = [1200, 1000, 800, 600, 400, 250]
+
+[flood]
+# Simplified terrain model: HAND (height above nearest drainage) <= level, connected to the river.
+levels_m = [0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0]
+drainage_waterways = ["river", "stream"]
+smooth_m = 15                      # morphological close (buffer out, then in) to tidy pixel edges
+simplify_m = 5
+
+[settlements]
+# OSM has very few village nodes in this area, so if fewer than min_osm_villages exist we derive
+# settlements from building clusters: buildings closer than link_m join one cluster; clusters with
+# >= min_buildings are settlements; very large clusters (towns) are split into split_cell_m sectors.
+# Tuned so the area has ~50 settlements (tested: 60 m/15 bld gave 138 = too many hamlets).
+min_osm_villages = 15
+link_m = 100
+min_buildings = 40
+max_cluster_buildings = 300
+split_cell_m = 1000
+name_search_m = 600     # take the name of the nearest named OSM feature within this distance
+
+[population]
+# ASSUMPTION: one OSM building ~ one household, and the average Malawian household
+# has 4.4 people (2018 Malawi Population and Housing Census). Used to estimate
+# village population = buildings in the village's Voronoi cell x persons_per_building.
+persons_per_building = 4.4
+
+[sources]
+geoboundaries_api = "https://www.geoboundaries.org/api/current/gbOpen/{iso}/{level}/"
+overpass_mirrors = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+]
+osm_api_map = "https://api.openstreetmap.org/api/0.6/map"
+copernicus_dem = "https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_{ns}{lat:02d}_00_{ew}{lon:03d}_00_DEM/Copernicus_DSM_COG_10_{ns}{lat:02d}_00_{ew}{lon:03d}_00_DEM.tif"
+worldcover = "https://esa-worldcover.s3.eu-central-1.amazonaws.com/v200/2021/map/ESA_WorldCover_10m_2021_v200_{ns}{lat:02d}{ew}{lon:03d}_Map.tif"
+ms_buildings_index = "https://minedbuildings.z5.web.core.windows.net/global-buildings/dataset-links.csv"
+user_agent = "sentinel-shield-student-project"

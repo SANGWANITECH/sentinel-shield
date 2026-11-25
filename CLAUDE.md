@@ -19,6 +19,10 @@ A **flood-level slider (0–6 m)** simulates rising water. For each level the ap
 Flat (low slope), open land cover, dry (outside flood extent at the current level),
 clear of buildings and power lines, **at least 50 x 50 m**, **at least 120 m from water**.
 
+### Rescue assumptions (configurable, in `config.toml`)
+- **Staging base:** Kamuzu International Airport, Lilongwe (lat -13.789, lon 33.781) -> `staging_base` table.
+- **Helicopter cruise speed:** 180 km/h (used for ETA).
+
 ## Spatial methods
 Flood simulation from DEM, slope analysis, land-cover reclassification, buffers,
 multi-criteria suitability, spatial intersection, nearest-facility (KNN).
@@ -55,7 +59,21 @@ docs/           report, diagrams, presentation notes
 Tables: `district_boundary`, `study_area`, `rivers`, `roads`, `villages` (name, population),
 `buildings`, `power_lines`, `flood_extent` (level_m unique), `candidate_lz` (code, area_m2,
 mean_slope, landcover), `staging_base`. Every geometry column is SRID 32736 with a GIST index.
+Raster tables `dem` (Copernicus GLO-30, 30 m) and `landcover` (ESA WorldCover 2021, 10 m) are
+created by `scripts/load_data.py` via raster2pgsql.
 Apply with: `psql -U postgres -d sentinel_shield -f db/schema.sql`
+
+## Data pipeline (session 2)
+- Study area bbox (EPSG:4326, W,S,E,N): `33.6909, -13.5657, 33.7833, -13.4937` (10 x 8 km on Mponela).
+  The Kasangadzi River could not be confirmed by name in OSM; news reports place it through Mponela.
+- `config.toml`: study area, rescue assumptions, persons_per_building = 4.4, source URLs.
+- `scripts/common.py`: paths, config + .env readers.
+- `scripts/download_data.py`: data/raw downloads (skips existing files; `--force`, `--only`).
+  OSM via Overpass mirrors, with an OSM API bbox fallback. Rasters via windowed COG reads.
+- `scripts/load_data.py`: reproject to 32736, clip, estimate population (Voronoi x buildings), then
+  TRUNCATE + reload in one transaction. Rasters are reprojected into data/processed and loaded with raster2pgsql.
+- Run with `.venv\Scripts\python.exe`. Network here is very slow (~30 KB/s AWS, ~2 KB/s OSM API),
+  and Overpass is often overloaded.
 
 ## Working conventions
 - Team members must be able to explain every file in the presentation: when creating/changing

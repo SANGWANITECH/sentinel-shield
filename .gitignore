@@ -11,6 +11,8 @@ data/raw/
 __pycache__/
 *.pyc
 .venv/
+.wheelhouse/
+.pytest_cache/
 
 # Node
 node_modules/

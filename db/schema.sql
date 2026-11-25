@@ -101,6 +101,20 @@ CREATE TABLE IF NOT EXISTS candidate_lz (
 COMMENT ON TABLE candidate_lz IS
   'Polygons that pass the static criteria (flat, open land cover, at least 50x50 m), made by multi-criteria suitability analysis. At each flood level the API removes the flooded, water-buffer and hazard areas (ST_Difference) to find which zones are still safe.';
 
+-- Added in session 3: the built-up area of each village (merged 30 m buffers around its
+-- buildings). A village is stranded when the flood touches ANY part of it, not only its centre point.
+ALTER TABLE villages ADD COLUMN IF NOT EXISTS footprint geometry(MultiPolygon, 32736);
+COMMENT ON COLUMN villages.footprint IS
+  'Built-up area of the village (union of 30 m buffers around its buildings). Used for the flood intersection test.';
+
+-- Added in session 3: the exact landing spot inside each zone and its suitability score.
+ALTER TABLE candidate_lz ADD COLUMN IF NOT EXISTS score double precision;
+ALTER TABLE candidate_lz ADD COLUMN IF NOT EXISTS pad geometry(Point, 32736);
+COMMENT ON COLUMN candidate_lz.pad IS
+  'Landing spot: centre of the zone with the most clearance (pole of inaccessibility of the 50x50 m-eroded shape). Distances, KNN and map markers use this point.';
+COMMENT ON COLUMN candidate_lz.score IS
+  'Suitability score 0-1 (60% flatness, 40% size). Used to choose the best ~40 zones.';
+
 CREATE TABLE IF NOT EXISTS staging_base (
     id           integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name         text NOT NULL,
@@ -109,6 +123,11 @@ CREATE TABLE IF NOT EXISTS staging_base (
 );
 COMMENT ON TABLE staging_base IS
   'Where rescue helicopters take off (e.g. an airfield or a forward base near Mponela). Used as the starting point for helicopter flight distance and ETA.';
+
+-- ---------------------------------------------------------------------
+-- Raster tables `dem` and `landcover` are created by scripts/load_data.py
+-- (raster2pgsql -d -I -C), because their columns depend on the raster files.
+-- ---------------------------------------------------------------------
 
 -- ---------------------------------------------------------------------
 -- GIST spatial indexes: let ST_Intersects, ST_DWithin and KNN (<->)
@@ -124,5 +143,7 @@ CREATE INDEX IF NOT EXISTS power_lines_geom_gix       ON power_lines       USING
 CREATE INDEX IF NOT EXISTS flood_extent_geom_gix      ON flood_extent      USING GIST (geom);
 CREATE INDEX IF NOT EXISTS candidate_lz_geom_gix      ON candidate_lz      USING GIST (geom);
 CREATE INDEX IF NOT EXISTS staging_base_geom_gix      ON staging_base      USING GIST (geom);
+CREATE INDEX IF NOT EXISTS candidate_lz_pad_gix       ON candidate_lz      USING GIST (pad);
+CREATE INDEX IF NOT EXISTS villages_footprint_gix     ON villages          USING GIST (footprint);
 
 COMMIT;

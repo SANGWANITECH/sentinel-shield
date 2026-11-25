@@ -34,6 +34,27 @@ and power lines, is at least **50 x 50 m** and is at least **120 m from water**.
 **live** with fast vector queries. Geometry is stored in **EPSG:32736 (UTM 36S)** so all
 measurements are in metres, and the app returns **EPSG:4326 GeoJSON** to the map.
 
+## Data sources
+| Layer | Source | How it is fetched |
+|---|---|---|
+| Dowa boundary | geoBoundaries MWI ADM2 (simplified) | filtered to Dowa |
+| Villages, roads, rivers, buildings, power lines | OpenStreetMap | Overpass API, clipped to the study area (OSM API fallback) |
+| Elevation (DEM) | Copernicus GLO-30 (AWS open data) | windowed read of the study area only |
+| Land cover | ESA WorldCover 10 m 2021 (AWS open data) | windowed read of the study area only |
+
+**Study area:** 10 x 8 km centred on Mponela, bbox `33.6909, -13.5657, 33.7833, -13.4937` (W, S, E, N, EPSG:4326).
+
+## Assumptions
+All assumptions are set in `config.toml` and can be changed there.
+- **Village population.** OSM rarely records population, so we estimate it. Each village gets a
+  Voronoi polygon (the area closer to it than to any other village). We count the buildings in
+  that polygon and multiply by **4.4 persons per building**. This assumes one building is roughly one
+  household, using the average household size from the 2018 Malawi Population and Housing Census.
+  *Limitations:* non-residential buildings are counted, compounds with several buildings are
+  overcounted, unmapped buildings are missed, and villages at the edge of the study area have cut-off cells.
+- **Helicopter staging base:** Kamuzu International Airport, Lilongwe (-13.789, 33.781).
+- **Helicopter cruise speed:** 180 km/h, used for ETA.
+
 ## Stack
 PostgreSQL 17 + PostGIS 3.7 · Python 3.12 · FastAPI + psycopg · React (Vite) + Leaflet · QGIS
 
@@ -56,4 +77,12 @@ data/raw  data/processed  db/  scripts/  backend/  frontend/  qgis/  docs/
    ```powershell
    psql -U postgres -d sentinel_shield -f db/schema.sql
    ```
-4. Load data, then run the backend and frontend. *(Instructions will be added as these parts are built.)*
+4. Create the Python environment and load the data:
+   ```powershell
+   python -m venv .venv
+   .\.venv\Scripts\python.exe -m pip install -r requirements.txt   # ~85 MB
+   .\.venv\Scripts\python.exe scripts\download_data.py   # small clipped downloads into data/raw
+   .\.venv\Scripts\python.exe scripts\load_data.py       # reproject to EPSG:32736 and load into PostGIS
+   ```
+   Both scripts can be re-run. Files that were already downloaded are skipped (use `--force` to download them again), and the loader clears the tables and reloads them.
+5. Run the backend and frontend. *(Instructions will be added as these parts are built.)*
