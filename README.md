@@ -123,5 +123,6 @@ qgis/           manual QGIS steps            docs/      methods, database, code 
 ```
 
 ## Presentation material
+**New to the project? Start with [docs/TEAM_GUIDE.md](docs/TEAM_GUIDE.md).**
 [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) (3-minute demo) · [docs/SLIDE.md](docs/SLIDE.md) ·
 [docs/QA_PREP.md](docs/QA_PREP.md) (25 likely questions) · [PROGRESS.md](PROGRESS.md) (build log and decisions)
